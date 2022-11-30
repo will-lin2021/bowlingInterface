@@ -7,6 +7,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from httplib2.error import ServerNotFoundError
 
+
 class BowlingInterface:
     # Constructors
     def __init__(self, sheet_id: str, sheet_range: str):
@@ -46,7 +47,7 @@ class BowlingInterface:
             print("Getting spreadsheet resources successful\n")
 
             print("Testing Http calls...")
-            result = self.sheet.values().get(
+            self.sheet.values().get(
                 spreadsheetId=self.sheet_id,
                 range=self.sheet_range
             ).execute()

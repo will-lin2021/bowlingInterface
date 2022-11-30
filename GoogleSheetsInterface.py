@@ -44,6 +44,7 @@ class GoogleSheetsInterface:
             self.sheet_id = sheet_id
             self.sheet_range = sheet_range
             self.sheet = service.spreadsheets()
+
             print("Getting spreadsheet resources successful")
             print()
             print("Testing Http Calls...")
@@ -68,28 +69,15 @@ class GoogleSheetsInterface:
         print("Testing Http Calls Successful\n")
 
     # Getters
-    @dispatch()
-    def get_data(self):
-        result = self.sheet.values().get(
-            spreadsheetId=self.sheet_id,
-            range=self.sheet_range
-        ).execute()
-
-        values = result.get(
-            "values",
-            []
-        )
-
-        if not values:
-            return None
+    def get_data(self, start_row: int = None, start_col: int = None, end_row: int = None, end_col: int = None):
+        if not start_row and not start_col and not end_row and not end_col:
+            sheet_range = self.sheet_range
         else:
-            return values
+            sheet_range = self.sheet_range + self.get_cell_range(start_row, start_col, end_row, end_col)
 
-    @dispatch(int, int, int, int)
-    def get_data(self, start_col: int, start_row: int, end_col: int, end_row: int):
         result = self.sheet.values().get(
             spreadsheetId=self.sheet_id,
-            range=self.sheet_range + GoogleSheetsInterface.get_cell_range(start_col, start_row, end_col, end_row)
+            range=sheet_range
         ).execute()
 
         values = result.get(
@@ -99,86 +87,120 @@ class GoogleSheetsInterface:
 
         return None if not values else values
 
-    def get_cell(self, row: int, col: int) -> str:  # TODO: create get method for cell
-        data = self.get_data()
+    def get_cell(self, row: int, col: int) -> str:
+        data = self.get_data(row, col, row, col)
+        if not data:
+            return "Null"
 
-        return
+        return data[0][0]
 
-    def get_val(self, val: str, col_or_row: str, isCol: bool = False) -> (int, str):  # TODO: create get_val method
+    def get_val(self, val: str, col_or_row_num: int, isCol: bool = False) -> (int, int, str):  # TODO: create get_val method
         if isCol:  # Searching column
-            return -1, "Col Search"
+            n_rows = self.get_num_row()
+            data = self.get_data(1, col_or_row_num, n_rows, col_or_row_num)
+            if not data:
+                return -1, -1, "Null"
+
+            for r, row in enumerate(data, start=1):
+                if row and row[0] == val:
+                    return r, col_or_row_num, val
         else:  # Searching row
-            return -1, "Row Search"
+            n_cols = self.get_num_col()
+            data = self.get_data(col_or_row_num, 1, col_or_row_num, n_cols)
+            if not data:
+                return -1, -1, "Null"
 
-    def get_last_col(self) -> int:
-        data = self.get_data()
-        c = 0
-        for row in data:
-            for col_num, col in enumerate(row, start=1):
-                c = max(c, col_num)
-        return c
+            for c, col in enumerate(data[0], start=1):
+                if col == val:
+                    return col_or_row_num, c, val
+        return -1, -1, val
 
-    def get_last_row(self) -> int:  # TODO: gets row number of last filled row
+    def get_num_col(self) -> int:
         data = self.get_data()
-        r = 0
-        for r_num, row in enumerate(data, start=1):
-            r = r_num
-        return r
+        if not data:
+            return -1
+
+        return len(data[0])
+
+    def get_num_row(self) -> int:
+        data = self.get_data()
+        if not data:
+            return -1
+
+        return len(data)
 
     # Setters
-    def set_cell(self, val: str, row: int, col: int) -> None:  # TODO: create set method for cell
-        return None
-    
-    # Functions
-    def find_empty_row(self) -> int:  # TODO: gets row number of the first empty row
-        data = self.get_data()
-        r = 0
-        for r, row in enumerate(data, start=1):
-            continue
-        return r + 1
+    def set_cell(self, row: int, col: int, val: str) -> bool:
+        data = self.get_data(row, col, row, col)
+        if not data:
+            return False
 
-    def add_row(self, row: int) -> int:  # TODO: creates a new row at the given row, returns the row number
         values = [
-            ["temp"]
+            [val]
         ]
         body = {
             "values": values
         }
 
-        request = self.sheet.values().batchUpdate(
+        request = self.sheet.values().update(
             spreadsheetId=self.sheet_id,
-            body={
-                "insertRange": {
-                    "range": {
-                        "sheetId": 0,
-                        "startRowIndex": 2,
-                        "endRowIndex": 3,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 1
-                    },
-                    "shiftDimension": "ROWS"
-                }
-            }
-        )
-        request.execute()
-
-        request = self.sheet.values().append(
-            spreadsheetId=self.sheet_id,
-            range=self.sheet_range + self.get_cell_range(1, row, 1, row),
+            range=self.sheet_range + GoogleSheetsInterface.get_cell_range(row, col, row, col),
             valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
             body=body
-        )
-        request.execute()
+        ).execute()
+
+        return True
+    
+    # Functions
+    def add_row(self, row: int) -> int:  # TODO: creates a new row at the given row, returns the row number
+        body = {
+            "requests": [
+                    {
+                        "insertDimension": {
+                            "range": {
+                                "sheetId": "0",
+                                "dimension": "ROWS",
+                                "startIndex": row-1,
+                                "endIndex": row
+                            }
+                        }
+                    }
+                ]
+        }
+
+        request = self.sheet.batchUpdate(
+            spreadsheetId=self.sheet_id,
+            body=body
+        ).execute()
 
         return row
 
     def add_col(self, col: int) -> int:  # TODO: creates a new col at the given col, returns the col number (or letter)
-        return -1
+        body = {
+            "requests": [
+                {
+                    "insertDimension": {
+                        "range": {
+                            "sheetId": "0",
+                            "dimension": "COLUMNS",
+                            "startIndex": col - 1,
+                            "endIndex": col
+                        }
+                    }
+                }
+            ]
+        }
 
-    def print(self, start_col: int, start_row: int,
+        request = self.sheet.batchUpdate(
+            spreadsheetId=self.sheet_id,
+            body=body
+        ).execute()
+
+        return col
+
+    def print(self, start_row: int, start_col: int,
               end_col: int, end_row: int) -> None:
-        data = self.get_data(start_col, start_row, end_col, end_row)
+        data = self.get_data(start_row, start_col, end_row, end_col)
 
         if not data:
             return
@@ -194,6 +216,10 @@ class GoogleSheetsInterface:
                 print(col.center(max_len), end=" ")
             print()
 
+    def format_print(self, start_row: int, start_col: int, format_spacing):
+        # TODO: create a function that can print with spacing added, specified in input list
+        return
+
     # Helpers
     @staticmethod
     def get_abc_col(col: int) -> str:
@@ -208,15 +234,15 @@ class GoogleSheetsInterface:
         return output
 
     @staticmethod
-    def get_cell_range(start_col: int, start_row: int, end_col: int, end_row: int) -> str:
+    def get_cell_range(start_row: int, start_col: int, end_row: int, end_col: int) -> str:
         return "!" +\
                GoogleSheetsInterface.get_abc_col(start_col) + str(start_row) + ":" +\
                GoogleSheetsInterface.get_abc_col(end_col) + str(end_row)
 
 
 def main(args):
-    instance = GoogleSheetsInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "Sheet1")
-    instance.add_row(5)
+    instance = GoogleSheetsInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "TestSheet")
+    print(instance.get_cell(1, 1))
 
 
 if __name__ == "__main__":
