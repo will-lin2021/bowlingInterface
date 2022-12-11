@@ -1,282 +1,261 @@
-import os.path
+"""
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from httplib2.error import ServerNotFoundError
+BowlingInterface.py
+Written by: William Lin
 
+Description:
+Interface to Bowling Score Tracker in Google Sheets. Utilizes GoogleSheetsInterface (created by William Lin)
+
+"""
+
+from GoogleSheetsInterface import GoogleSheetsInterface
 
 class BowlingInterface:
     # Constructors
     def __init__(self, sheet_id: str, sheet_range: str):
-        print("Checking for API tokens...")
-        creds = None
-        scope = ["https://www.googleapis.com/auth/spreadsheets"]
-        if os.path.exists("token.json"):
-            creds = Credentials.from_authorized_user_file(
-                "token.json",
-                scope
-            )
+        self.interface = GoogleSheetsInterface(sheet_id, sheet_range)
+        if not self.interface.sheet:
+            self.interface = None
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    "credentials.json",
-                    scope
-                )
-                creds = flow.run_local_server(port=0)
-            with open("token.json", 'w') as token:
-                token.write(creds.to_json())
-        print("Checking of API tokens successful")
-        print()
-        print("Getting spreadsheet resources...")
-        try:
-            service = build(
-                "sheets",
-                "v4",
-                credentials=creds
-            )
+    # Getters
+    def get_game(self, date: str) -> int:
+        data = self.interface.get_data(0, 1)
+        if not data:
+            return 0
 
-            self.sheet_id = sheet_id
-            self.sheet_range = sheet_range
-            self.sheet = service.spreadsheets()
-            print("Getting spreadsheet resources successful\n")
-
-            print("Testing Http calls...")
-            self.sheet.values().get(
-                spreadsheetId=self.sheet_id,
-                range=self.sheet_range
-            ).execute()
-
-        except HttpError as err:
-            print("Http call testing failed")
-            print("Check if Sheet ID and/or Sheet Range is valid")
-            print("Traceback:")
-            print(err)
-            self.sheet = None
-            return
-
-        except ServerNotFoundError as err:
-            print("Http call testing failed")
-            print("Check internet connection")
-            print("Traceback:")
-            print(err)
-            self.sheet = None
-            return
-
-        print("Http call testing successful\n")
-
-    # Getters and Setters
-    def get_data(self, data: str = "all"):
-        if data == "date":
-            result = self.sheet.values().get(
-                spreadsheetId=self.sheet_id,
-                range=self.sheet_range + '!A:A'
-            ).execute()
-        elif data == "dategame":
-            result = self.sheet.values().get(
-                spreadsheetId=self.sheet_id,
-                range=self.sheet_range + '!A:B'
-            ).execute()
-        elif data == "totalscore":
-            result = self.sheet.values().get(
-                spreadsheetId=self.sheet_id,
-                range=self.sheet_range + '!C:C'
-            ).execute()
-        else:
-            result = self.sheet.values().get(
-                spreadsheetId=self.sheet_id,
-                range=self.sheet_range
-            ).execute()
-
-        values = result.get(
-            "values",
-            []
-        )
-
-        if not values:
-            print("No data found.")
-            return None
-        else:
-            return values
-
-    def get_empty_row(self) -> int:
-        data = self.get_data("dategame")
-        r = 0
-        for r, row in enumerate(data, start=1):
-            continue
-        return r + 1
+        for r_num, row in enumerate(data, start=1):
+            if row and row[0] == date:
+                return r_num
+        return 0
 
     def get_games_played(self, date: str) -> int:
-        data = self.get_data("dategame")
-        date_exists = False
+        if not self.get_game(date):
+            return 0
 
-        n_games = None
-        for r, row in enumerate(data, start=1):
-            if not date_exists:
-                if not row:
-                    continue
-                elif row[0] == date:
-                    n_games = 1
-                    date_exists = True
-            else:
-                if n_games < int(row[1]):
-                    n_games = int(row[1])
-                else:
-                    return n_games
-        return n_games if date_exists else -1
+        data = self.interface.get_data(0, 2, self.get_game(date), 1)
+        if not data:
+            return 0
 
-    def get_date(self, date: str) -> int:
-        data = self.get_data("date")
-        for r, row in enumerate(data, start=1):
-            if not row:
-                continue
-            elif row[0] == date:
-                return r
-        return -1
+        r_num = 0
+        for row in data:
+            if int(row[1]) < r_num:
+                break
+            r_num += 1
+
+
+        return r_num
+
+    # Setters
 
     # Functions
-    def new_game(self, date: str) -> int:  # TODO: creates and returns row of new day created
-        def get_frames(row: str, frame: int) -> (str, str, str, str, str):
-            if frame == 1:
-                return f"F{row}", "", f"E{row},F{row}", f"G{row},H{row}", f"I{row},J{row}"
-            elif frame == 2:
-                return f"H{row}", f"AA{row}+", f"G{row},H{row}", f"I{row},J{row}", f"K{row},L{row}"
-            elif frame == 3:
-                return f"J{row}", f"AB{row}+", f"I{row},J{row}", f"K{row},L{row}", f"M{row},N{row}"
-            elif frame == 4:
-                return f"L{row}", f"AC{row}+", f"K{row},L{row}", f"M{row},N{row}", f"O{row},P{row}"
-            elif frame == 5:
-                return f"N{row}", f"AD{row}+", f"M{row},N{row}", f"O{row},P{row}", f"Q{row},R{row}"
-            elif frame == 6:
-                return f"P{row}", f"AE{row}+", f"O{row},P{row}", f"Q{row},R{row}", f"S{row},T{row}"
-            elif frame == 7:
-                return f"R{row}", f"AF{row}+", f"Q{row},R{row}", f"S{row},T{row}", f"U{row},V{row}"
-            elif frame == 8:
-                return f"T{row}", f"AG{row}+", f"S{row}:T{row}", f"U{row},V{row}", f"W{row},0"
-            elif frame == 9:
-                return f"V{row}", f"AH{row}+", f"U{row}:V{row}", f"W{row},X{row}", f"0,0"
-            elif frame == 10:
-                return f"Y{row}", f"AI{row}+", f"W{row}:X{row}", f"Y{row}", "0"
+    def new_game(self, date: str):
 
-        def score_func(row: str, frame: int) -> str:
-            blank, prev_score, curr_fr, next_fr, next_next_fr = get_frames(row, frame)
-            output = "=IF("
-            output += "ISBLANK(" + blank + "),"
-            output += '"",'
-            output += prev_score
-            output += "B_SCORE_FRAME("
-            output += "B_CALC_FRAME(" + curr_fr + "),"
-            if frame == 10:
-                output += "B_PARSE(" + next_fr + "),"
-                output += "0"
+
+        return 0
+
+    def modify_game(self, date: str):
+        return 0
+
+    def play_game(self, date: str = None, row: int = None):
+        if not date: # if row is inputted
+            return
+        if not row: # if date is inputted
+            return
+
+    def print_game(self, date: str) -> bool:
+        game_row = self.interface.get_val_index(date, 1, True)
+        if not game_row:
+            return False
+        games_played = self.get_games_played(date)
+        if not games_played:
+            return False
+
+        spacing = [
+            8,  # Date
+            4,  # Game
+            3,  # Score
+            1, 1,  # G1
+            1, 1,  # G2
+            1, 1,  # G3
+            1, 1,  # G4
+            1, 1,  # G5
+            1, 1,  # G6
+            1, 1,  # G7
+            1, 1,  # G8
+            1, 1,  # G9
+            2, 1, 1,  # G10
+            3, 3, 3, 3, 3,  # Scores pt.1
+            3, 3, 3, 3, 3  # Scores pt.2
+        ]
+
+        justification = [
+            False,  # Date
+            True,  # Game
+            True,  # Score
+            False, False,  # G1
+            False, False,  # G2
+            False, False,  # G3
+            False, False,  # G4
+            False, False,  # G5
+            False, False,  # G6
+            False, False,  # G7
+            False, False,  # G8
+            False, False,  # G9
+            True, False, False,  # G10
+            True, True, True, True, True,  # Scores pt.1
+            True, True, True, True, True  # Scores pt.2
+        ]
+
+        print("{} {} {}".format("Date".ljust(8), "Game", "Scr"), end=" ")
+        print("{} - {} - {} - {} - {} - {} - {} - {} - {} - {} - -".format(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), end=" ")
+        print("{} {} {} {} {} {} {} {} {} {}".format("1".rjust(3), "2".rjust(3), "3".rjust(3), "4".rjust(3),
+                                                     "5".rjust(3), "6".rjust(3), "7".rjust(3), "8".rjust(3),
+                                                     "9".rjust(3), "10".rjust(3)), end="")
+        print()
+
+        self.interface.format_print(game_row+games_played-1, 34, game_row, 1, spacing, justification)
+        return True
+
+    def __game_loop(self, row: int):
+        def parse_score(score: str, prev_score: str = None) -> int:
+            if score == "x":
+                return 10
+            if score == "/":
+                return 10 - parse_score(prev_score)
+            if score == "-":
+                return 0
             else:
-                output += "B_CALC_BONUS(" + curr_fr + "," + next_fr + "),"
-                output += "B_CALC_DOUBLE(" + curr_fr + "," + next_fr + "," + next_next_fr + ")"
-            output += ")"
-            output += ")"
-            return output
+                try:
+                    return int(score)
+                except ValueError:
+                    return -1
+        def user_input(frame_num: int, throw_num: int, pin_num: int):
+            while 1:
+                throw = input(f"Frame {frame_num}: Throw {throw_num}> ")
 
-        r_game_int = self.get_empty_row()
-        r_game_str = str(r_game_int)
-        today_dategame_rc = "!A" + r_game_str + ":B" + r_game_str
-        today_total_score_rc = "!AA" + r_game_str + ":AJ" + r_game_str
-        dategame_setup = self.sheet_range + today_dategame_rc
-        score_setup = self.sheet_range + today_total_score_rc
+                if throw != "/" and 0 <= parse_score(throw) <= pin_num:
+                    return throw
+                else:
+                    print("Invalid Input: " + throw)
 
-        values = [
-            [date,
-             "=IF(ISDATE(INDIRECT(ADDRESS(ROW(),COLUMN()-1,4))),1,INDIRECT(ADDRESS(ROW()-1,COLUMN(),4))+1)"
-             ]
+        game_data = [
+            "", "", # 1
+            "", "", # 2
+            "", "", # 3
+            "", "", # 4
+            "", "", # 5
+            "", "", # 6
+            "", "", # 7
+            "", "", # 8
+            "", "", # 9
+            "", "", "" # 10
         ]
-        body = {
-            "values": values
-        }
 
-        request = self.sheet.values().append(
-            spreadsheetId=self.sheet_id,
-            range=dategame_setup,
-            valueInputOption="USER_ENTERED",
-            body=body
-        )
-        request.execute()
+        frame = 1
+        while frame < 10:
+            num_pins = 10
 
-        values = [
-            [score_func(r_game_str, 1),
-             score_func(r_game_str, 2),
-             score_func(r_game_str, 3),
-             score_func(r_game_str, 4),
-             score_func(r_game_str, 5),
-             score_func(r_game_str, 6),
-             score_func(r_game_str, 7),
-             score_func(r_game_str, 8),
-             score_func(r_game_str, 9),
-             score_func(r_game_str, 10)]
-        ]
-        body = {
-            "values": values
-        }
+            first_throw = user_input(frame, 1, num_pins)
+            if parse_score(first_throw) == 10:
+                game_data[2*(frame-1)] = "x"
+                game_data[2*(frame-1)+1] = "-"
+                frame += 1
+                continue
+            if 0 < parse_score(first_throw) < num_pins:
+                game_data[2*(frame-1)] = first_throw
+                num_pins -= parse_score(first_throw)
+            elif parse_score(first_throw) == 0:
+                game_data[2*(frame-1)] = "-"
 
-        request = self.sheet.values().update(
-            spreadsheetId=self.sheet_id,
-            range=score_setup,
-            valueInputOption="USER_ENTERED",
-            body=body
-        )
-        request.execute()
+            second_throw = user_input(frame, 2, num_pins)
+            if parse_score(second_throw, first_throw) == num_pins:
+                game_data[2*(frame-1)+1] = "/"
+            elif 0 < parse_score(second_throw) < num_pins:
+                game_data[2*(frame-1)+1] = second_throw
+            elif parse_score(second_throw) == 0:
+                game_data[2*(frame-1)+1] = "-"
 
-        return r_game_int
+            frame += 1
 
-    def modify(self):
+        num_pins = 10
+
+        first_throw = user_input(10, 1, num_pins)
+        if parse_score(first_throw) == 10:
+            game_data[2*(10-1)] = "x"
+        elif 0 < parse_score(first_throw) < num_pins:
+            game_data[2*(10-1)] = first_throw
+            num_pins -= parse_score(first_throw)
+        elif parse_score(first_throw) == 0:
+            game_data[2*(10-1)] = "-"
+
+        second_throw = user_input(10, 2, num_pins)
+        if first_throw == "x": # second throw strike condition
+            if parse_score(second_throw) == 10:
+                game_data[2*(10-1)+1] = "x"
+            elif 0 < parse_score(second_throw) < num_pins:
+                game_data[2*(10-1)+1] = second_throw
+                num_pins -= parse_score(second_throw)
+            elif parse_score(first_throw) == 0:
+                game_data[2*(10-1)+1] = "-"
+        else:
+            if parse_score(second_throw, first_throw) == num_pins:
+                game_data[2*(10-1)+1] = "/"
+                num_pins = 10
+            elif 0 < parse_score(second_throw) < num_pins:
+                game_data[2*(10-1)+1] = second_throw
+                return game_data
+            elif parse_score(second_throw) == 0:
+                game_data[2*(10-1)+1] = "-"
+                return game_data
+
+        third_throw = user_input(10, 3, num_pins)
+        if second_throw == "x" or second_throw == "/": # third throw strike condition
+            if parse_score(third_throw) == 10:
+                game_data[2*(10-1)+2] = "x"
+            elif 0 < parse_score(third_throw) < num_pins:
+                game_data[2*(10-1)+2] = third_throw
+                return game_data
+            elif parse_score(third_throw) == 0:
+                game_data[2*(10-1)+2] = "-"
+                return game_data
+        else:
+            if parse_score(third_throw, second_throw) == num_pins:
+                game_data[2*(10-1)+2]  = "/"
+                return game_data
+            elif 0 < parse_score(third_throw, second_throw) < num_pins:
+                game_data[2*(10-1)+2] = third_throw
+                return game_data
+            elif parse_score(third_throw) == 0:
+                return game_data
+
+        return game_data
+
+    def game_loop_test(self):
+        return self.__game_loop(0)
+
+
+SPREADSHEET_ID = None
+SPREADSHEET_RANGE = None
+
+def main(args):
+    global SPREADSHEET_ID, SPREADSHEET_RANGE
+
+    from dotenv import load_dotenv
+    from os import getenv
+
+    if not load_dotenv("./.secrets/.env"):
+        print("Failed to get .env")
+        print("Exiting...")
         return
 
-    def print_game(self, date: str) -> int:
-        try:
-            data = self.get_data()
-        except HttpError as err:
-            print(err)
-            return 1
+    SPREADSHEET_ID = getenv('SPREADSHEET_ID')
+    SPREADSHEET_RANGE = getenv('SPREADSHEET_TEST_RANGE')
 
-        r_date = self.get_date(date)
-        n_games = self.get_games_played(date)
+    instance = BowlingInterface(SPREADSHEET_ID, SPREADSHEET_RANGE)
 
-        if r_date == -1 or n_games == -1:
-            return 1
+    print(instance.game_loop_test())
 
-        print("{0:8} {1:4} {2:5}"
-              .format("Date", "Game", "Score"), end=" ")
-        print("|", end=" ")
-        print("{0:5} {1:5} {2:5} {3:5} {4:5} {5:5} {6:5} {7:5} {8:5} {9:8}"
-              .format("FRME1", "FRME2", "FRME3", "FRME4", "FRME5", "FRME6", "FRME7", "FRME8", "FRME9", "FRME10"),
-              end=" ")
-        print("|", end=" ")
-        print("{0:3} {1:3} {2:3} {3:3} {4:3} {5:3} {6:3} {7:3} {8:3} {9:3}"
-              .format("GM1", "GM2", "GM3", "GM4", "GM5", "GM6", "GM7", "GM8", "GM9", "GM10"))
-        for r, row in enumerate(data, start=1):
-            if r == 1 or r < r_date:
-                continue
-            if r >= r_date + n_games:
-                break
-            for c, col in enumerate(row, start=1):
-                if c == 1:  # Date
-                    print("{0:8}".format(col), end=" ")
-                elif c == 2:  # Game
-                    print("{0:^4}".format(col), end=" ")
-                elif c == 3:  # Score
-                    print("{0:^5}".format(col), end=" ")
-                elif c == 4:  # Spacer
-                    print("|", end=" ")
-                elif 5 <= c <= 25:  # Frame 1 - 10
-                    print("{0:2}".format(col), end=" ")
-                elif c == 26:  # Spacer 2
-                    print("|", end=" ")
-                elif 27 <= c <= 35:  # Game 1 - 9 Score
-                    print("{0:>3}".format(col), end=" ")
-                elif c == 36:  # Game 10 Score
-                    print("{0:>4}".format(col), end="")
-            print()
-        return 0
+if __name__ == "__main__":
+    from sys import argv
+
+    main(argv)
