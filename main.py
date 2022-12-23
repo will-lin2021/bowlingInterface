@@ -8,33 +8,57 @@ Main file for running Bowling Score Tracker
 
 """
 
-
 from BowlingInterface import BowlingInterface
 
 from dotenv import load_dotenv
 from os import getenv
-
 
 SPREADSHEET_ID = None
 SPREADSHEET_RANGE = None
 
 
 def today(dateformat: str = "%m/%d/%y") -> str:
-    from datetime import date as dt
+    from datetime import date as d
+    return d.today().strftime(dateformat)
 
-    return dt.today().strftime(dateformat)
+
+def format_date(date: str) -> str:
+    from datetime import datetime as dt
+    try:
+        return dt.strptime(date, "%m/%d/%y").date().strftime("%m/%d/%y")
+    except ValueError:
+        return ""
 
 
-def __print_invalid_input(user_input, argExp: int = None, argGot: int = None) -> None:
-    if not argExp and not argGot:
-        print("Invalid input: '" + user_input + "'\n")
+def __print_help_menu(option: str = None):
+    if option == 'n':
+        print("Creates game on given date")
+        print("\tusage: 'n <date>'")
+    elif option == 'p':
+        print("Prints game on given date")
+        print("\tusage: 'p <date>'")
+    elif option == 'o':
+        print("Options menu for game")
+        print("\tusage: 'o <option>'")
+        print("\tOptions:")
+        print("\t\t'm <date> <game> <frame>': modify an existing game")
+    elif option == 'q':
+        print("Quit Bowling Interface")
+        print("\tusage: 'q'")
     else:
-        print("Invalid number of inputs in: '" + user_input + "'")
-        print("Expected " + str(argExp) + " inputs (Got " + str(argGot) + ")\n")
+        print(" Interface Commands ".center(60, "="))
+        print("{:1} | {}".format("n", "new game"))
+        print("{:1} | {}".format("p", "print game"))
+        print("{:1} | {}".format("o", "options"))
+        print("{:1} | {}".format("q", "quit"))
+        print("{:1} | {}".format("?", "print this menu"))
+        print("Call '? <cmd>' for help with specific commands")
 
 
 def main(args):
     global SPREADSHEET_ID, SPREADSHEET_RANGE
+
+    print("  Bowling Score Tracking Interface ".center(60, "="))
 
     if not load_dotenv("./.secrets/.env"):
         print("Failed to get .env")
@@ -42,77 +66,74 @@ def main(args):
         return
 
     SPREADSHEET_ID = getenv('SPREADSHEET_ID')
-    SPREADSHEET_RANGE = getenv('SPREADSHEET_RANGE')
+    SPREADSHEET_RANGE = getenv('SPREADSHEET_RANGE') if (len(args) == 1 or args[1] != "test") else getenv(
+        'SPREADSHEET_TEST_RANGE')
 
     instance = BowlingInterface(SPREADSHEET_ID, SPREADSHEET_RANGE)
-    if not instance.interface:
+    if not instance.valid:
         print("Failed to get Google Sheets Interface")
         print("Exiting...")
         return 1
 
-    if len(args) > 1 and args[1] == "test":
-        result = instance.print_game("12/02/22")
-
-        print(result)
-
-        return
-
     while 1:  # Interface loop
-        print("Bowling Interface Commands")
-        print("{0:^7} | {1:10} | {2}".format("Command", "Inputs", "Function"))
-        print("{0:^7} | {1:10} | {2}".format("p", "date", "Print game from date (default: today)"))
-        print("{0:^7} | {1:10} | {2}".format("m", "date", "Modify existing game"))
-        print("{0:^7} | {1:10} | {2}".format("n", "None", "Starts a new game today"))
-        print("{0:^7} | {1:10} | {2}".format("q", "None", "Quit interface"))
+        user_input = input("Bowling (? for help)> ").strip()
+        user_inputs = user_input.split()
+        command = user_inputs[0] if user_inputs else ""
+        args = user_inputs[1:]
 
-        user_input = input("Bowling> ")
-        user_inputs = user_input.split(" ")
-        command = user_inputs[0]
         if command == 'q':
             print("Quitting bowling data interface...")
             break
-        elif command == 'n':
-            if len(user_inputs) > 2:  # more than 2 inputs
-                __print_invalid_input(user_input, 1, len(user_inputs))
-            elif len(user_inputs) == 2:  # date selected
-                r_game = instance.new_game(user_inputs[1])
-            elif instance.get_game(today()) != -1:  # game exists today
-                print("Date already exists, use 'm' to modify date")
-            else:  # game doesn't exist today
-                r_game = instance.new_game(today())
-                while __game_loop(r_game):
-                    r_game += 1
-                    break
-        elif command == 'm':
-            if len(user_inputs) > 2:
-                __print_invalid_input(user_input)
-            elif len(user_inputs) == 2:  # modify game from specific date
-                r_game = instance.get_game(user_inputs[1])
-                while __game_loop(r_game):
-                    r_game += 1
-                    break
+        elif command == '?':
+            if len(args) == 1:
+                __print_help_menu(args[0])
             else:
-                r_game = instance.get_game(today())
-                while __game_loop(r_game):  # modify today's game
-                    r_game += 1
-                    break
+                __print_help_menu()
+        elif command == 'n':
+            if len(args) > 1:
+                print("Invalid Input: '" + user_input + "'")
+                __print_help_menu(command)
+            elif len(args) == 1:
+                date = format_date(args[0])
+                if not date:
+                    print("Invalid Date Format: '" + args[0] + "'")
+                else:
+                    print(f" Date: {date}, Game: {instance.get_games_played(date)+1} ".center(60, "="))
+                    instance.play_game(date)
+            else:
+                print(f" Date: {today()}, Game: {instance.get_games_played(today())+1} ".center(60, "="))
+                instance.play_game(today())
         elif command == 'p':
-            if len(user_inputs) > 2:
-                __print_invalid_input(user_input)
-                continue
-            elif len(user_inputs) == 2:  # Print game on specific date
-                result = instance.print_game(user_inputs[1])
-                if not result:
-                    print("No games played on " + user_inputs[1])
-            else:  # Print game from today
+            if len(args) > 1:
+                print("Invalid Input: '" + user_input + "'")
+                __print_help_menu(command)
+            elif len(args) == 1:
+                date = format_date(args[0])
+                if not date:
+                    print("Invalid Date Format: '" + args[0] + "'")
+                else:
+                    result = instance.print_game(date)
+                    if not result:
+                        print("No games played on " + args[0])
+            else:
                 result = instance.print_game(today())
                 if not result:
                     print("No games played on " + today())
+        elif command == 'o':
+            if len(args) >= 1:
+                if args[0] == 'm':
+                    print("moddy")
+            else:
+                __print_help_menu(command)
+        elif command == 't':
+            print(instance.get_game_row(args[0]))
         else:
-            __print_invalid_input(user_input)
+            print("Invalid Input: '" + user_input + "'")
+
         print()
 
 
 if __name__ == '__main__':
     from sys import argv
+
     main(argv)

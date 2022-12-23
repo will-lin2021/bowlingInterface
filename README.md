@@ -1,3 +1,3 @@
-# bowlingInterface
-Interface to Google Sheets Bowling Score Tracker made with Google API
+# Bowling Interface
 
+## Python Bowling Score Tracker utilizing Google Sheets API

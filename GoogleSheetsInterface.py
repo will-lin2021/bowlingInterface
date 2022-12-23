@@ -10,6 +10,7 @@ Use of Google API OAuth 2.0 Client credentials from cloud.google.com
 
 """
 
+import csv
 from os.path import exists as token_exists
 from httplib2.error import ServerNotFoundError
 
@@ -172,16 +173,16 @@ class GoogleSheetsInterface:
         except APIConnectionError as err:
             raise DataGetError(f"Unable to Get Data from Cell: {err}")
 
-    def get_val_index(self, val: str, col_or_row_num: int, colSearch: bool = False) -> int:
+    def get_value_index(self, val: str, col_or_row_num: int, col_search: bool = False) -> int:
         """
         Gets row or column index for given value in column or row
         :param val: search value
         :param col_or_row_num: index of row or column
-        :param colSearch: True to perform column search, else row search
+        :param col_search: True to perform column search, else row search
         :return: index location of value; returns <code>0</code>
         """
 
-        if colSearch:  # Searching column
+        if col_search:  # Searching column
             n_rows = self.get_num_row()
 
             try:
@@ -218,12 +219,15 @@ class GoogleSheetsInterface:
         :return: number of rows in sheet
         """
 
-        try:
-            data = self.get_data()
-            if not data:
-                return 0
+        request = self.sheet.get(
+            spreadsheetId=self.spreadsheet_id,
+            ranges=self.sheet_range
+        )
 
-            return len(data)
+        try:
+            result = request.execute()
+
+            return result["sheets"][0]["properties"]["gridProperties"]["rowCount"]
         except APIConnectionError as err:
             print(err)
             return 0
@@ -234,12 +238,15 @@ class GoogleSheetsInterface:
         :return: number of columns in sheet
         """
 
-        try:
-            data = self.get_data()
-            if not data:
-                return 0
+        request = self.sheet.get(
+            spreadsheetId=self.spreadsheet_id,
+            ranges=self.sheet_range
+        )
 
-            return len(max(data, key=len))
+        try:
+            result = request.execute()
+
+            return result["sheets"][0]["properties"]["gridProperties"]["columnCount"]
         except APIConnectionError as err:
             print(err)
             return 0
@@ -272,7 +279,30 @@ class GoogleSheetsInterface:
             result = request.execute()
 
             return True if result else False
-        except HttpError:
+        except HttpError as err:
+            print(err)
+            return False
+
+    def append_cells(self, data: list):
+        body = {
+            "majorDimension": "ROWS",
+            "values": data
+        }
+
+        request = self.sheet.values().append(
+            spreadsheetId=self.spreadsheet_id,
+            range=self.sheet_range,
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body=body
+        )
+
+        try:
+            result = request.execute()
+
+            return True if result else False
+        except HttpError as err:
+            print(err)
             return False
 
     def set_row(self, row: int, col: int, vals: list) -> bool:
@@ -334,7 +364,7 @@ class GoogleSheetsInterface:
             return False
 
     # Functions
-    def add_row(self, row: int) -> int:
+    def add_row(self, row: int) -> bool:
         """
         Add row to sheet at given index
         :param row: row index
@@ -345,7 +375,7 @@ class GoogleSheetsInterface:
         n_rows = self.get_num_row()
         sheet_id = self.__get_sheet_id()
         if sheet_id < 0:
-            return 0
+            return False
 
         if row == n_rows + 1:
             body = {
@@ -385,11 +415,12 @@ class GoogleSheetsInterface:
         try:
             result = request.execute()
 
-            return row if result else 0
-        except HttpError:
-            return 0
+            return True if result else False
+        except HttpError as err:
+            print(err)
+            return True
 
-    def add_col(self, col: int) -> int:
+    def add_col(self, col: int) -> bool:
         """
         Add column to sheet at given index
         :param col: column index
@@ -400,7 +431,7 @@ class GoogleSheetsInterface:
         n_cols = self.get_num_col()
         sheet_id = self.__get_sheet_id()
         if sheet_id < 0:
-            return 0
+            return False
 
         if col == n_cols + 1:
             body = {
@@ -440,9 +471,10 @@ class GoogleSheetsInterface:
         try:
             result = request.execute()
 
-            return col if result else 0
-        except HttpError:
-            return 0
+            return True if result else False
+        except HttpError as err:
+            print(err)
+            return False
 
     def resize_row(self, row: int, size: int) -> bool:
         """
@@ -572,27 +604,93 @@ class GoogleSheetsInterface:
             print(err)
             return False
 
-    def delete_row(self, row: int) -> list:
+    def delete_row(self, row: int) -> bool:
         """
         Deletes row at given row index
         :param row: row index
         :return: boolean - deletion success
         """
 
-        # TODO
-        return [row]
+        n_rows = self.get_num_row()
+        if row < 1 or n_rows < row:
+            raise DataGetError(str(row))
 
-    def delete_col(self, col: int) -> list:
+        sheet_id = self.__get_sheet_id()
+        if sheet_id < 0:
+            return False
+
+        body = {
+            "requests": [
+                {
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "ROWS",
+                            "startIndex": row - 1,
+                            "endIndex": row
+                        }
+                    }
+                }
+            ]
+        }
+
+        request = self.sheet.batchUpdate(
+            spreadsheetId=self.spreadsheet_id,
+            body=body
+        )
+
+        try:
+            result = request.execute()
+
+            return True if result else False
+        except HttpError as err:
+            print(err)
+            return False
+
+    def delete_col(self, col: int) -> bool:
         """
         Deletes row at given column index
         :param col: column index
         :return: boolean - deletion success
         """
 
-        # TODO
-        return [col]
+        n_cols = self.get_num_col()
+        if col < 1 or n_cols < col:
+            raise DataGetError(str(col))
 
-    def move_row(self, row_src: int, row_dest: int) -> None:
+        sheet_id = self.__get_sheet_id()
+        if sheet_id < 0:
+            return False
+
+        body = {
+            "requests": [
+                {
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": col - 1,
+                            "endIndex": col
+                        }
+                    }
+                }
+            ]
+        }
+
+        request = self.sheet.batchUpdate(
+            spreadsheetId=self.spreadsheet_id,
+            body=body
+        )
+
+        try:
+            result = request.execute()
+
+            return True if result else False
+        except HttpError as err:
+            print(err)
+            return False
+
+    def move_row(self, row_src: int, row_dest: int) -> bool:
         """
         Moves row from input indices
         :param row_src: row index of source
@@ -600,10 +698,46 @@ class GoogleSheetsInterface:
         :return: None
         """
 
-        # TODO
-        return
+        n_rows = self.get_num_row()
+        if row_src < 1 or n_rows < row_src:
+            raise DataGetError(str(row_src))
+        if row_dest < 1 or n_rows < row_dest:
+            raise DataGetError(str(row_dest))
 
-    def move_col(self, col_src: int, col_dest: int) -> None:
+        sheet_id = self.__get_sheet_id()
+        if sheet_id < 0:
+            return False
+
+        body = {
+            "requests": [
+                {
+                    "moveDimension": {
+                        "source": {
+                            "sheetId": sheet_id,
+                            "dimension": "ROWS",
+                            "startIndex": row_src - 1,
+                            "endIndex": row_src
+                        },
+                        "destinationIndex": row_dest
+                    }
+                }
+            ]
+        }
+
+        request = self.sheet.batchUpdate(
+            spreadsheetId=self.spreadsheet_id,
+            body=body
+        )
+
+        try:
+            result = request.execute()
+
+            return True if result else False
+        except HttpError as err:
+            print(err)
+            return False
+
+    def move_col(self, col_src: int, col_dest: int) -> bool:
         """
         Moves column from input indices
         :param col_src: column index of source
@@ -611,8 +745,59 @@ class GoogleSheetsInterface:
         :return: None
         """
 
-        # TODO
-        return
+        n_cols = self.get_num_col()
+        if col_src < 1 or n_cols < col_src:
+            raise DataGetError(str(col_src))
+        if col_dest < 1 or n_cols < col_dest:
+            raise DataGetError(str(col_dest))
+
+        sheet_id = self.__get_sheet_id()
+        if sheet_id < 0:
+            return False
+
+        body = {
+            "requests": [
+                {
+                    "moveDimension": {
+                        "source": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": col_src - 1,
+                            "endIndex": col_src
+                        },
+                        "destinationIndex": col_dest
+                    }
+                }
+            ]
+        }
+
+        request = self.sheet.batchUpdate(
+            spreadsheetId=self.spreadsheet_id,
+            body=body
+        )
+
+        try:
+            result = request.execute()
+
+            return True if result else False
+        except HttpError as err:
+            print(err)
+            return False
+
+    def import_csv(self, filename: str, filepath: str = None, header: bool = True):
+        if filepath:
+            filename = filepath + "/" + filename
+
+        with open(filename, newline="") as csv_file:
+            csv_reader = csv.reader(csv_file)
+            entries = []
+            for row in csv_reader:
+                if not header:
+                    header = True
+                    continue
+                entries.append(row)
+
+            self.append_cells(entries)
 
     def print(self, end_row: int, end_col: int,
               start_row: int = 1, start_col: int = 1) -> bool:
@@ -711,19 +896,20 @@ class GoogleSheetsInterface:
         :return: int - sheet ID
         """
         request = self.sheet.get(
-            spreadsheetId=self.spreadsheet_id
+            spreadsheetId=self.spreadsheet_id,
+            ranges=self.sheet_range
         )
 
         try:
             result = request.execute()
 
-            for _sheet in result["sheets"]:
-                if _sheet["properties"]["title"] == self.sheet_range:
-                    return _sheet["properties"]["sheetId"]
-            return -1
+            return result["sheets"][0]["properties"]["sheetId"]
         except HttpError:
             print("Unable to get Sheet ID")
             return -1
+
+    def get_sheet_id_test(self):
+        return self.__get_sheet_id()
 
     # Helpers
     @staticmethod
@@ -762,12 +948,19 @@ class GoogleSheetsInterface:
 
 def main(args):
     try:
-        instance = GoogleSheetsInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "TestSheet")
+        # instance = GoogleSheetsInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "TestSheet")
+        instance = GoogleSheetsInterface("12uAy-anHK2ureQug-lSo-yWxEvxUn3SLY096tD03hTE", "Apple Card Transactions")
     except APIConnectionError as err:
         print(err)
         return 1
 
-    print(instance.resize_col(1, 25))
+    instance.import_csv("Apple Card Transactions - May 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
+    instance.import_csv("Apple Card Transactions - June 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
+    instance.import_csv("Apple Card Transactions - July 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
+    instance.import_csv("Apple Card Transactions - August 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
+    instance.import_csv("Apple Card Transactions - September 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
+    instance.import_csv("Apple Card Transactions - October 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
+    instance.import_csv("Apple Card Transactions - November 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
 
 
 if __name__ == "__main__":
