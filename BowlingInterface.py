@@ -4,22 +4,51 @@ BowlingInterface.py
 Written by: William Lin
 
 Description:
-Interface to Bowling Score Tracker in Google Sheets. Utilizes GoogleSheetsInterface (created by William Lin)
+Interface to Bowling Score Tracker in Google Sheets. Utilizes StorageInterfaces.py (created by William Lin)
 
 """
 
-from GoogleSheetsInterface import GoogleSheetsInterface
-from GoogleSheetsInterface import APIConnectionError
+from StorageInterfaces import GoogleSheetsInterface
+from StorageInterfaces import MariaDBInterface
+from StorageInterfaces import APIConnectionError
 
 from datetime import datetime as dt
 
 
 class BowlingInterface:
-    # Constructors
-    def __init__(self, sheet_id: str, sheet_range: str):
+    # Constructor
+    def __init__(self, username: str, password: str, database: str, sheet_id: str, sheet_range: str):
+        self.valid = False
+        self.interface = MariaDBInterface(username, password, database)
+        self.backup = GoogleSheetsInterface(sheet_id, sheet_range)
+
+        # TODO: Create checks for valid interface and backup instance
+
+    def get_games_played(self, date: str):
+        # TODO: Get and return max val of game from given date
+        return
+
+    def get_game(self, date: str, game: int):
+        # TODO: Get row of given date and game number
+        return
+
+    def new_game(self, date: str):
+        # TODO: Create a new row in interface
+        # TODO: Check if game exists on input date, if yes: create a new row with incremented games counter
+        return
+
+    def modify_game(self, date: str, game: int, frame: int, throw: int, new_val: int):
+        # TODO: Modify values in given date, game, etc.
+        return
+
+
+class BowlingInterfaceOld:
+    # Constructor
+    def __init__(self, username: str, password: str, database: str, sheet_id: str, sheet_range: str):
         try:
             self.valid = True
-            self.interface = GoogleSheetsInterface(sheet_id, sheet_range)
+            self.interface = MariaDBInterface(username, password, database)
+            self.backup = GoogleSheetsInterface(sheet_id, sheet_range)
 
             if not self.interface.sheet:
                 self.valid = False
@@ -51,7 +80,7 @@ class BowlingInterface:
 
     # Setters
 
-    # Functions
+    # Old Functions
     def play_game(self, date: str):
         def print_help_menu(option: str = None):
             if option == 't':
@@ -414,7 +443,7 @@ def main(args):
     SPREADSHEET_ID = getenv('SPREADSHEET_ID')
     SPREADSHEET_RANGE = getenv('SPREADSHEET_TEST_RANGE')
 
-    instance = BowlingInterface(SPREADSHEET_ID, SPREADSHEET_RANGE)
+    instance = BowlingInterfaceOld(SPREADSHEET_ID, SPREADSHEET_RANGE)
 
 
 if __name__ == "__main__":

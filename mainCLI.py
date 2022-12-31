@@ -1,14 +1,14 @@
 """
 
-main.py
+mainCLI.py
 Written by: William Lin
 
 Description:
-Main file for running Bowling Score Tracker
+Command Line Interface (CLI) for Bowling Score Tracker
 
 """
 
-from BowlingInterface import BowlingInterface
+from BowlingInterface import BowlingInterfaceOld
 
 from dotenv import load_dotenv
 from os import getenv
@@ -56,7 +56,7 @@ def __print_help_menu(option: str = None):
 
 
 def main(args):
-    global SPREADSHEET_ID, SPREADSHEET_RANGE
+    global USER, PASS, SPREADSHEET_ID, SPREADSHEET_RANGE
 
     print("  Bowling Score Tracking Interface ".center(60, "="))
 
@@ -65,11 +65,14 @@ def main(args):
         print("Exiting...")
         return
 
+    USER = getenv('MARIADB_USER')
+    PASS = getenv('MARIADB_PASS')
+    DB = getenv('MARIADB_DB')
     SPREADSHEET_ID = getenv('SPREADSHEET_ID')
     SPREADSHEET_RANGE = getenv('SPREADSHEET_RANGE') if (len(args) == 1 or args[1] != "test") else getenv(
         'SPREADSHEET_TEST_RANGE')
 
-    instance = BowlingInterface(SPREADSHEET_ID, SPREADSHEET_RANGE)
+    instance = BowlingInterfaceOld(USER, PASS, DB, SPREADSHEET_ID, SPREADSHEET_RANGE)
     if not instance.valid:
         print("Failed to get Google Sheets Interface")
         print("Exiting...")

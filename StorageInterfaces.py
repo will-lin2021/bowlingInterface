@@ -1,16 +1,20 @@
 """
 
-GoogleSheetsInterface
+StorageInterface.py
 Written By: William Lin
 
 Description:
-Interface to Google Sheets using Google API Services
+Interface to Storage Interfaces, cloud-based (Google Sheets) and locally-based (mariaDb)
 
-Use of Google API OAuth 2.0 Client credentials from cloud.google.com
+Uses:
+    - Google API OAuth 2.0 Client credentials from cloud.google.com
+    - MariaDB
 
 """
 
 import csv
+import mariadb
+import datetime
 from os.path import exists as token_exists
 from httplib2.error import ServerNotFoundError
 
@@ -37,7 +41,7 @@ class DataSetError(Exception):
 
 
 class GoogleSheetsInterface:
-    # Constructors
+    # Constructor
     def __init__(self, spreadsheet_id: str, sheet_name: str):
         """
         Google spreadsheet interface using Google's API
@@ -107,7 +111,7 @@ class GoogleSheetsInterface:
     # Getters
     def get_data(self, end_row: int = 0, end_col: int = 0, start_row: int = 1, start_col: int = 1) -> list:
         """
-        Gets data for a given range in sheet
+        Gets data for a given range in sheet. Enter `0` for end indices to select rest of data
         :param int end_row: end row index for data
         :param end_col: end column index for data
         :param start_row: start row index for data
@@ -117,18 +121,23 @@ class GoogleSheetsInterface:
         :raises APIConnectionError: unable to connect to Google API
         """
 
+        # Check for valid bound
         if end_row and end_row < start_row:
             raise DataGetError(f"Invalid Row Bounds: {start_row} - {end_row}")
         if end_col and end_col < start_col:
             raise DataGetError(f"Invalid Column Bounds: {start_col} - {end_col}")
 
-        if not end_row and not end_col:  # no end bounds provided
+        # Get data range
+        if not end_row and not end_col and start_row == 1 and start_col == 1:  # get all data
             sheet_range = self.sheet_range
-        elif not end_row:  # no row end bound provided
+        elif not end_row and not end_col:  # get data after provided start row and column bounds (inclusive)
+            sheet_range = self.sheet_range \
+                          + self.get_cell_range(start_row, start_col, self.get_num_row(), self.get_num_col())
+        elif not end_row:  # get all data between two column bounds (inclusive)
             sheet_range = self.sheet_range + self.get_cell_range(start_row, start_col, self.get_num_row(), end_col)
-        elif not end_col:  # no col end bound provided
+        elif not end_col:  # get data between two row bounds (inclusive)
             sheet_range = self.sheet_range + self.get_cell_range(start_row, start_col, end_row, self.get_num_col())
-        else:  # all bounds provided
+        else:  # get data between row and column bounds (inclusive)
             sheet_range = self.sheet_range + self.get_cell_range(start_row, start_col, end_row, end_col)
 
         request = self.sheet.values().get(
@@ -159,6 +168,7 @@ class GoogleSheetsInterface:
         :raises DataGetError: input row or col indices is outside of sheet range
         """
 
+        # Check for valid bound
         if row < 1 or self.get_num_row() < row:
             raise DataGetError(f"Input Row outside Range: {row} -> (1, {self.get_num_row()}")
         if col < 1 or self.get_num_col() < col:
@@ -215,7 +225,7 @@ class GoogleSheetsInterface:
 
     def get_num_row(self) -> int:
         """
-        Get total number of row in sheet
+        Get total number of row in sheet (including empty rows)
         :return: number of rows in sheet
         """
 
@@ -234,7 +244,7 @@ class GoogleSheetsInterface:
 
     def get_num_col(self) -> int:
         """
-        Get total number of columns in sheet
+        Get total number of columns in sheet (including empty columns)
         :return: number of columns in sheet
         """
 
@@ -367,7 +377,7 @@ class GoogleSheetsInterface:
     def add_row(self, row: int) -> bool:
         """
         Add row to sheet at given index
-        :param row: row index
+        :param row: row number
         :return: index of new row; if unable to add row, returns 0
         :raises OutOfRangeException: index is out of the add-able range
         """
@@ -423,7 +433,7 @@ class GoogleSheetsInterface:
     def add_col(self, col: int) -> bool:
         """
         Add column to sheet at given index
-        :param col: column index
+        :param col: column number
         :return: index of new column; if unable add column, returns 0
         :raises OutOfRangeException: index is out of the add-able range
         """
@@ -542,7 +552,7 @@ class GoogleSheetsInterface:
 
     def resize_col(self, col: int, size: int) -> bool:
         """
-        Resizes column at given column index
+        Resizes column at given index
         :param col: column index
         :param size: new size of row (0 to autoresize)
         :return: bool - success; returns <code>False</code> if resizing was not successful
@@ -606,7 +616,7 @@ class GoogleSheetsInterface:
 
     def delete_row(self, row: int) -> bool:
         """
-        Deletes row at given row index
+        Deletes row at given index
         :param row: row index
         :return: boolean - deletion success
         """
@@ -649,7 +659,7 @@ class GoogleSheetsInterface:
 
     def delete_col(self, col: int) -> bool:
         """
-        Deletes row at given column index
+        Deletes row at given index
         :param col: column index
         :return: boolean - deletion success
         """
@@ -786,9 +796,9 @@ class GoogleSheetsInterface:
 
     def import_csv(self, filename: str, filepath: str = None, header: bool = True):
         if filepath:
-            filename = filepath + "/" + filename
+            filepath = filepath + "/" + filename
 
-        with open(filename, newline="") as csv_file:
+        with open(filepath, newline="") as csv_file:
             csv_reader = csv.reader(csv_file)
             entries = []
             for row in csv_reader:
@@ -946,21 +956,189 @@ class GoogleSheetsInterface:
             GoogleSheetsInterface.get_abc_col(end_col) + str(end_row)
 
 
+class MariaDBInterface:
+    # Constructor
+    def __init__(self, user: str, password: str, database: str):
+        try:
+            self.conn = mariadb.connect(
+                user=user,
+                password=password,
+                host="localhost",
+                database=database
+            )
+            self.cursor = self.conn.cursor()
+        except mariadb.Error as err:
+            print(err)
+
+    # Basic Functions
+    def add_row(self, table: str, target_keys: tuple, target_values: tuple):
+        if len(target_keys) != len(target_values):
+            return None
+
+        target_keys = self.__values_str(target_keys)
+
+        self.cursor.execute(
+            f"INSERT INTO {table} {target_keys} VALUES {target_values}"
+        )
+        self.conn.commit()
+
+    def get_row(self, table: str, search_keys: tuple = None, search_values: tuple = None,
+                sort_keys: tuple = None, sort_order: tuple = None, num_rows: int = 25):
+        if search_keys and search_values and len(search_keys) != len(search_values):
+            return None
+
+        if search_keys and search_values and sort_keys:  # get data with search and ordering
+            processed_search = self.__where_str(search_keys, search_values)
+            processed_sort_keys = self.__orderby_str(sort_keys, sort_order)
+
+            self.cursor.execute(
+                f"SELECT * FROM {table} WHERE {processed_search} "
+                f"ORDER BY {processed_sort_keys} LIMIT {num_rows}"
+            )
+        elif not search_keys and not search_values and sort_keys:  # get data with ordering
+            processed_sort_keys = self.__orderby_str(sort_keys, sort_order)
+
+            self.cursor.execute(
+                f"SELECT * FROM {table} ORDER BY {processed_sort_keys} LIMIT {num_rows}"
+            )
+        elif search_keys and search_values:  # get data with search
+            processed_search = self.__where_str(search_keys, search_values)
+
+            self.cursor.execute(
+                f"SELECT * FROM {table} WHERE {processed_search} LIMIT {num_rows}"
+            )
+        else:  # get all data
+            self.cursor.execute(
+                f"SELECT * FROM {table} LIMIT {num_rows}"
+            )
+        return list(self.cursor)
+
+    def set_row(self, table: str, target_keys: tuple, target_values: tuple,
+                search_keys: tuple, search_values: tuple, limit: int = 1):
+        if len(target_keys) != len(target_values) or len(search_keys) != len(search_values):
+            return None
+
+        processed_input = self.__set_str(target_keys, target_values)
+        processed_search = self.__where_str(search_keys, search_values)
+
+        self.cursor.execute(
+            f"UPDATE {table} SET {processed_input} WHERE {processed_search} LIMIT {limit}"
+        )
+        self.conn.commit()
+
+    def delete_row(self, table: str, target_keys: tuple, target_values: tuple, limit: int = 1):
+        if len(target_keys) != len(target_values):
+            return None
+
+        processed_search = self.__where_str(target_keys, target_values)
+
+        self.cursor.execute(
+            f"DELETE FROM {table} WHERE {processed_search} LIMIT {limit}"
+        )
+        self.conn.commit()
+
+    # Advanced Functions (requires confirmation)
+    def add_table(self, name: str, init_columns: tuple, init_types: tuple):
+        return
+
+    def add_col(self, table: str, target: str, data: tuple):
+        return
+
+    def modify_col(self):
+        return
+
+    def set_col(self):
+        return
+
+    def get_col(self):
+        return
+
+    def del_col(self):
+        return
+
+    # Helper Functions
+    @staticmethod
+    def __values_str(keys: tuple) -> str:
+        output = ""
+        for i, _value in enumerate(keys):
+            if i == 0:
+                output += "("
+            if i == len(keys) - 1:
+                output += f"{keys[i]})"
+            else:
+                output += f"{keys[i]}, "
+        return output
+
+    @staticmethod
+    def __where_str(keys: tuple, values: tuple) -> str:
+        output = ""
+        for i, (key, value) in enumerate(zip(keys, values)):
+            if i == len(keys) - 1:
+                if value is None:
+                    output += f"{key} IS NULL"
+                elif isinstance(value, str):
+                    output += f"{key}='{value}'"
+                else:
+                    output += f"{key}={value}"
+            else:
+                if value is None:
+                    output += f"{key} IS NULL AND "
+                elif isinstance(value, str):
+                    output += f"{key}='{value}' AND "
+                else:
+                    output += f"{key}={value} AND "
+        return output
+
+    @staticmethod
+    def __set_str(keys: tuple, values: tuple):
+        output = ""
+        for i, (key, value) in enumerate(zip(keys, values)):
+            if i == len(keys) - 1:
+                if isinstance(value, str):
+                    output += f"{key}='{value}'"
+                else:
+                    output += f"{key}={value}"
+            else:
+                if isinstance(value, str):
+                    output += f"{key}='{value}', "
+                else:
+                    output += f"{key}={value}, "
+        return output
+
+    @staticmethod
+    def __orderby_str(keys: tuple, order: tuple) -> str:
+        output = ""
+        for i, (_key, _order) in enumerate(zip(keys, order)):
+            if i == len(keys) - 1:
+                output += f"{_key} {'DESC' if _order else ''}"
+            else:
+                output += f"{_key} {'DESC' if _order else ''}, "
+        return output
+
+
 def main(args):
+    from dotenv import load_dotenv
+    from os import getenv
+
+    if not load_dotenv("./.secrets/.env"):
+        print("Failed to get .env")
+        print("Exiting...")
+        return
+
     try:
         # instance = GoogleSheetsInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "TestSheet")
-        instance = GoogleSheetsInterface("12uAy-anHK2ureQug-lSo-yWxEvxUn3SLY096tD03hTE", "Apple Card Transactions")
+        instance = MariaDBInterface(getenv("MARIADB_USER"), getenv("MARIADB_PASS"), "bowling_scores")
     except APIConnectionError as err:
         print(err)
         return 1
+    except mariadb.Error as err:
+        print(err)
+        return 1
 
-    instance.import_csv("Apple Card Transactions - May 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
-    instance.import_csv("Apple Card Transactions - June 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
-    instance.import_csv("Apple Card Transactions - July 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
-    instance.import_csv("Apple Card Transactions - August 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
-    instance.import_csv("Apple Card Transactions - September 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
-    instance.import_csv("Apple Card Transactions - October 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
-    instance.import_csv("Apple Card Transactions - November 2022.csv", filepath="/Users/linw2021/Downloads", header=False)
+    for i in instance.get_row("data"):
+        print(i)
+
+    instance.conn.close()
 
 
 if __name__ == "__main__":
