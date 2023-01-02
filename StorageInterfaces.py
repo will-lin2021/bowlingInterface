@@ -14,7 +14,6 @@ Uses:
 
 import csv
 import mariadb
-import datetime
 from os.path import exists as token_exists
 from httplib2.error import ServerNotFoundError
 
@@ -25,22 +24,82 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 
-class APIConnectionError(Exception):
-    def __init__(self, message="Unable to Connect to Google API Servers"):
-        self.message = message
+class GoogleSheetInterface:
+    def __init__(self, spreadsheet_id: str, sheet_name: str):
+        self.valid = True
+        creds = None
+        scope = ['https://www.googleapis.com/auth/spreadsheets']
+        if token_exists(".secrets/token.json"):
+            creds = Credentials.from_authorized_user_file(
+                ".secrets/token.json",
+                scope
+            )
 
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    ".secrets/credentials.json",
+                    scope
+                )
+                creds = flow.run_local_server(port=0)
+            with open(".secrets/token.json", 'w') as token:
+                token.write(creds.to_json())
 
-class DataGetError(Exception):
-    def __init__(self, message="Unable to Get Data"):
-        self.message = message
+        service = build(
+            "sheets",
+            "v4",
+            credentials=creds
+        )
 
+        self.spreadsheet_id = spreadsheet_id
+        self.sheet_range = sheet_name
+        self.sheet = service.spreadsheets()
 
-class DataSetError(Exception):
-    def __init__(self, message="Unable to Set Data"):
-        self.message = message
+        request = self.sheet.values().get(
+            spreadsheetId=self.spreadsheet_id,
+            range=self.sheet_range
+        )
+
+        try:
+            request.execute()
+        except Exception as err:
+            self.valid = False
+            self.err = err
+
+    def add_row(self):
+        return
+
+    def get_row(self):
+        return
+
+    def set_row(self):
+        return
+
+    def del_row(self):
+        return
+
+    def add_col(self):
+        return
+
+    def get_col(self):
+        return
+
+    def set_col(self):
+        return
+
+    def del_col(self):
+        return
+
+    def import_csv(self):
+        return
 
 
 class GoogleSheetsInterface:
+    # TODO: Simplify Interface
+    # TODO: Limit to Add, Get, Set, Delete Row and Col
+
     # Constructor
     def __init__(self, spreadsheet_id: str, sheet_name: str):
         """
@@ -959,6 +1018,8 @@ class GoogleSheetsInterface:
 class MariaDBInterface:
     # Constructor
     def __init__(self, user: str, password: str, database: str):
+        self.valid = True
+
         try:
             self.conn = mariadb.connect(
                 user=user,
@@ -968,14 +1029,15 @@ class MariaDBInterface:
             )
             self.cursor = self.conn.cursor()
         except mariadb.Error as err:
-            print(err)
+            self.valid = False
+            self.err = err
 
     # Basic Functions
     def add_row(self, table: str, target_keys: tuple, target_values: tuple):
         if len(target_keys) != len(target_values):
             return None
 
-        target_keys = self.__values_str(target_keys)
+        target_keys, target_values = self.__values_str(target_keys, target_values)
 
         self.cursor.execute(
             f"INSERT INTO {table} {target_keys} VALUES {target_values}"
@@ -1026,7 +1088,7 @@ class MariaDBInterface:
         )
         self.conn.commit()
 
-    def delete_row(self, table: str, target_keys: tuple, target_values: tuple, limit: int = 1):
+    def del_row(self, table: str, target_keys: tuple, target_values: tuple, limit: int = 1):
         if len(target_keys) != len(target_values):
             return None
 
@@ -1038,36 +1100,84 @@ class MariaDBInterface:
         self.conn.commit()
 
     # Advanced Functions (requires confirmation)
-    def add_table(self, name: str, init_columns: tuple, init_types: tuple):
-        return
+    def purge_table(self, table: str):
+        self.cursor.execute(
+            f"DELETE FROM {table}"
+        )
+        self.conn.commit()
 
-    def add_col(self, table: str, target: str, data: tuple):
-        return
+    def add_col(self, table: str, column_name: str, column_type: str):
+        self.cursor.execute(
+            f"ALTER TABLE {table} ADD {column_name} {column_type}"
+        )
+        self.conn.commit()
 
-    def modify_col(self):
-        return
+    def set_col(self, table: str, column_name: str, new_type: str):
+        self.cursor.execute(
+            f"ALTER TABLE {table} MODIFY {column_name} {new_type}"
+        )
+        self.conn.commit()
 
-    def set_col(self):
-        return
-
-    def get_col(self):
-        return
-
-    def del_col(self):
-        return
+    def del_col(self, table: str, column_name: str):
+        self.cursor.execute(
+            f"ALTER TABLE {table} DROP COLUMN {column_name}"
+        )
+        self.conn.commit()
 
     # Helper Functions
     @staticmethod
-    def __values_str(keys: tuple) -> str:
-        output = ""
-        for i, _value in enumerate(keys):
-            if i == 0:
-                output += "("
+    def isdate(inp: str) -> bool:
+        from dateutil import parser
+        try:
+            parser.parse(
+                timestr=inp,
+                parserinfo=parser.parserinfo(False, True)
+            )
+            return True
+        except ValueError:
+            print("not date")
+            return False
+        except TypeError:
+            print("not date")
+            return False
+
+    @staticmethod
+    def __values_str(keys: tuple, values: tuple[str]) -> (str, str):
+        output_key = ""
+        output_data = ""
+        for i, key in enumerate(keys):
+            if len(keys) == 1:
+                output_key += f"({key})"
+                break
+            elif i == 0:
+                output_key += "("
+
             if i == len(keys) - 1:
-                output += f"{keys[i]})"
+                output_key += f"{key})"
             else:
-                output += f"{keys[i]}, "
-        return output
+                output_key += f"{key}, "
+
+        for i, value in enumerate(values):
+            if len(values) == 1:
+                if isinstance(value, str):
+                    output_data += f"('{value}')"
+                else:
+                    output_data += f"{value}"
+                break
+            elif i == 0:
+                output_data += "("
+
+            if i == len(values) - 1:
+                if isinstance(value, str):
+                    output_data += f"'{value}')"
+                else:
+                    output_data += f"{value})"
+            else:
+                if isinstance(value, str):
+                    output_data += f"'{value}', "
+                else:
+                    output_data += f"{value}, "
+        return output_key, output_data
 
     @staticmethod
     def __where_str(keys: tuple, values: tuple) -> str:
@@ -1116,7 +1226,13 @@ class MariaDBInterface:
         return output
 
 
+class InterfaceError(Exception):
+    pass
+
+
 def main(args):
+    from BowlingInterface import BowlingDate
+
     from dotenv import load_dotenv
     from os import getenv
 
@@ -1127,7 +1243,7 @@ def main(args):
 
     try:
         # instance = GoogleSheetsInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "TestSheet")
-        instance = MariaDBInterface(getenv("MARIADB_USER"), getenv("MARIADB_PASS"), "bowling_scores")
+        instance = MariaDBInterface(getenv("MARIADB_USER"), getenv("MARIADB_PASS"), getenv("MARIADB_DB"))
     except APIConnectionError as err:
         print(err)
         return 1
@@ -1135,10 +1251,7 @@ def main(args):
         print(err)
         return 1
 
-    for i in instance.get_row("data"):
-        print(i)
-
-    instance.conn.close()
+    print(instance.add_row("data", ("date",), (BowlingDate.today(),)))
 
 
 if __name__ == "__main__":
