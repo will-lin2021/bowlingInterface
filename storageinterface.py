@@ -15,13 +15,13 @@ Uses:
 import csv
 from os.path import exists as token_exists
 
-import mariadb
-
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+import mariadb
 
 
 class GoogleSheetInterface:
@@ -70,8 +70,14 @@ class GoogleSheetInterface:
             self.valid = False
             self.err = err
 
-    def add_row(self):
-        return
+    def add_row(self, col: int, row: int, data: list):
+        request = self.sheet
+
+        try:
+            request.execute()
+        except Exception as err:
+            print("Exception happened in `add_row`")
+            print(f"Trace: {err}")
 
     def get_row(self):
         return
@@ -102,12 +108,6 @@ class GoogleSheetInterface:
 
     @staticmethod
     def get_abc_col(col: int) -> str:
-        """
-        Get the letter equivalent of an integer
-        :param col: column index
-        :return: column index as a spreadsheet column letter
-        """
-
         def get_letter(num: int) -> str:
             return chr(65 + num)
 
@@ -121,7 +121,6 @@ class GoogleSheetInterface:
 
 
 class MariaDBInterface:
-    # Constructor
     def __init__(self, user: str, password: str, database: str):
         self.valid = True
         self.err = None
@@ -206,7 +205,7 @@ class MariaDBInterface:
         self.conn.commit()
 
     # Advanced Functions (requires confirmation)
-    def purge_table(self, table: str):
+    def purge_table(self, table: str, confirm: bool):
         self.cursor.execute(
             f"DELETE FROM {table}"
         )
@@ -352,13 +351,13 @@ def main(args):
         return
 
     try:
-        # instance = GoogleSheetsInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "TestSheet")
-        instance = MariaDBInterface(getenv("MARIADB_USER"), getenv("MARIADB_PASS"), getenv("MARIADB_DB"))
+        instance = GoogleSheetInterface("1_FMEwtAsS_yEpspGJYuWvbnx-9QVAfdQimqE31W7pME", "TestSheet")
+        # instance = MariaDBInterface(getenv("MARIADB_USER"), getenv("MARIADB_PASS"), getenv("MARIADB_DB"))
     except mariadb.Error as err:
         print(err)
         return 1
 
-    print(instance.add_row("data", ("date",), (DateUtils.today(),)))
+    print(instance.add_row())
 
 
 if __name__ == "__main__":

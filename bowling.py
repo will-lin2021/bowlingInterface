@@ -8,9 +8,9 @@ Interface to Bowling Score Tracker in Google Sheets. Utilizes StorageInterfaces.
 
 """
 
-from StorageInterface import MariaDBInterface
-from StorageInterface import GoogleSheetInterface
-from StorageInterface import InterfaceError
+from storageinterface import MariaDBInterface
+from storageinterface import GoogleSheetInterface
+from storageinterface import InterfaceError
 
 from datetime import datetime as t_datetime
 from datetime import date as t_date
@@ -21,7 +21,7 @@ from dateutil.parser import parserinfo
 class Interface:
     def __init__(self, username: str, password: str, database: str,
                  sheet_id: str, sheet_range: str,
-                 debug: bool = False):
+                 debug: bool = False, testing: bool = False):
         self.valid = True
         self.offline = False
         self.err: list = []
@@ -38,7 +38,9 @@ class Interface:
         #     self.err += self.interface.err
 
     def get_games_played(self, date: str) -> int:
-        return len(self.interface.get_row("data", ("date",), (date,)))
+        games_played = len(self.interface.get_row("data", ("date",), (date,)))
+
+        return games_played
 
     def get_game(self, date: str, game: int = None) -> list:
         if not game:
@@ -48,6 +50,7 @@ class Interface:
 
     def new_game(self, date: str):
         games_played = self.get_games_played(date)
+
         if not games_played:
             self.interface.add_row("data", ("date", "game",), (date, 1,))
         else:
@@ -93,6 +96,10 @@ class Interface:
 class GameUtils:
     @staticmethod
     def score_to_num(score: str, pins_left: int) -> int | None:
+        """
+            TODO: Make this take in the frame and throw to fix error when no pins are hit on first throw and '/' is
+            entered on the next, as this case errors at the moment
+        """
         if (pins_left == 10 and score == "/") or (pins_left != 10 and score == "x"):
             return None
         if score == "x":
@@ -140,6 +147,7 @@ class GameUtils:
             return False
         if frame == 10 and data[0] != 10 and (data[0] + data[1]) != 10 and data[2] != 0:
             return False
+
         return True
 
     @staticmethod

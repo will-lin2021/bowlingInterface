@@ -16,17 +16,20 @@ from dotenv import load_dotenv
 from os import getenv
 
 
+def print_banner(text : str, width : int, padding : str = "="):
+    text = " " + text + " "
+    print(text.center(width, padding))
+
+
 def print_help_menu(option: str = None):
     if option == 'n':
-        print("===== Create New Game ".ljust(30, "="))
-        print("Creates a new game. If no date is provided, defaults to today")
-        print("Date in `month/day/year` format (ex `1/1/99` or `01/01/99` or `01/01/1999`")
-        print("\t\tusage: 'n <opt date>'")
+        print_banner("Create New Game", 30)
+        print("Creates a new game on given date, or today, if date is not provided.")
+        print("Usage: 'n <date optional>'")
     elif option == 'm':
+        print_banner("Modify An Existing Game", 30)
         print("Modifies an existing game. ")
-        print("If `throw` is inputted, specific throw will be modified. If not, entire frame will be modified")
-        print("Date in `month/day/year` format (ex `1/1/99` or `01/01/99` or `01/01/1999`")
-        print("\tusage:'m <date> <game>'")
+        print("Usage:'m <date> <game>'")
     elif option == 'p':
         print("Prints game or games on given date")
         print("Date in `month/day/year` format (ex `1/1/99` or `01/01/99` or `01/01/1999`")
@@ -71,7 +74,7 @@ def game_play(instance: Interface, date: str):
 
     result = game_loop(instance, date, game_number)
     if result:
-        frame_data = instance.get_game(date, game_number)[0][3:24]
+        frame_data = instance.get_game(date, game_number)[0][2:23]
 
         frame_scores = GameUtils.calc_frame_scores(frame_data)
         accum_scores = GameUtils.accumulate_scores(frame_scores)
@@ -189,17 +192,20 @@ def modify_loop(instance: Interface, date: str, game: int):
 
 
 def print_game_results(data: list):
-    print(f"{' ' * 18} Frame {' ' * 36} Score")
     print("{:8} {:4} {:4}"
           .format("Date", "Game", "Scre"), end=" ")
+    print("| ", end="")
     print("{:<4}{:<4}{:<4}{:<4}{:<4}"
           .format("1  -  ", "2  -  ", "3  -  ", "4  -  ", "5  -  "), end="")
     print("{:<4}{:<4}{:<4}{:<4}{:<7}"
           .format("6  -  ", "7  -  ", "8  -  ", "9  - ", "10  -  -  "), end="")
-    print("{:<3} {:<3} {:<3} {:<3} {:<3} "
+    print("| ", end="")
+    print("{:^3} {:^3} {:^3} {:^3} {:^3} "
           .format("1", "2", "3", "4", "5"), end="")
-    print("{:<3} {:<3} {:<3} {:<3} {:<3}"
+    print("{:^3} {:^3} {:^3} {:^3} {:^3}"
           .format("6", "7", "8", "9", "10"))
+
+    print("=" * 125)
 
     for row in data:
         head, mid, tail = row[:2], row[2:23], row[23:]
@@ -209,6 +215,8 @@ def print_game_results(data: list):
             head[1],
             int(tail[-1])
         ), end=" ")
+
+        print("| ", end="")
 
         for frame, scores in enumerate(zip(mid[:18:2], mid[1:18:2]), start=1):
             if scores == (10, None):
@@ -229,7 +237,6 @@ def print_game_results(data: list):
                     print(f"{scores[1]}  ", end="")
         prev = None
         for throw, score in enumerate(mid[18:22], start=1):
-            # print(f"Current Score: {score}, Previous Score: {prev}")
             if score is None:
                 print("   ", end="")
                 break
@@ -245,7 +252,7 @@ def print_game_results(data: list):
                     print(f"{score}  ", end="")
             prev = score
 
-        # print(mid[18], mid[19], mid[20], end="")
+        print("| ", end="")
 
         for i, accumulated_score in enumerate(tail):
             if not accumulated_score:
@@ -292,8 +299,12 @@ class Validation:
         return True
 
 
+TESTING_MODE = False
+DEBUG_MODE = False
+
+
 def main(args):
-    print(" Bowling Score Tracking Interface ".center(60, "="))
+    print_banner("Bowling Score Tracking", 60)
 
     if not load_dotenv("./.secrets/.env"):
         print("Failed to get .env")
@@ -320,25 +331,26 @@ def main(args):
         return 1
 
     while 1:  # Interface loop
+        # Input and Input Parsing
         user_input = input("Bowling (? for help)> ").strip()
         user_inputs = user_input.split()
-        command = user_inputs[0] if user_inputs else ""
+        cmd = user_inputs[0] if user_inputs else ""
         args = user_inputs[1:]
 
-        if command == 'q':
+        if cmd == 'q':
             print("Quitting bowling data interface...")
             break
 
-        elif command == '?':
-            if len(args) == 1:
+        elif cmd == '?':
+            if len(args) >= 1:
                 print_help_menu(args[0])
             else:
                 print_help_menu()
 
-        elif command == 'n':
+        elif cmd == 'n':
             if not Validation.valid_new_game(args):
                 print(f"Invalid Input: '{user_input}'\n")
-                continue
+                return 0
 
             if len(args) == 0:
                 date = DateUtils.today()
@@ -347,7 +359,7 @@ def main(args):
 
             game_play(instance, date)
 
-        elif command == 'm':
+        elif cmd == 'm':
             if not Validation.valid_modify_game(args):
                 print(f"Invalid Input: '{user_input}'\n")
                 continue
@@ -357,7 +369,7 @@ def main(args):
 
             modify_loop(instance, date, game)
 
-        elif command == 'p':
+        elif cmd == 'p':
             # TODO: Make a print all
 
             if not Validation.valid_print_game(args):
@@ -400,7 +412,7 @@ def main(args):
 
                 print_game_results(result)
 
-        elif command == 's':
+        elif cmd == 's':
             # TODO: Statistics Menu
             # Select Overall, Year, Month, Week for data
             # Data: Spare completion percent, strike percent, average score, highest score
@@ -408,7 +420,7 @@ def main(args):
 
             pass
 
-        elif command == 'o':
+        elif cmd == 'o':
             # TODO: Option Menu
             # Move delete menu here
             # Add enabling debug mode
@@ -434,17 +446,13 @@ def main(args):
                 print(f"Invalid Input: '{user_input}'\n")
                 continue
 
-        elif command == 't':
+        elif cmd == 't':
             # print("Nothing is being tested at the moment")
 
-            # game_data = instance.get_game(DateUtils.format_date(DateUtils.to_date("1/13/23")))
-            # GameUtils.verify_game(game_data[0])
-
-            while 1:
-                user_input = input()
-                if user_input == 'q':
-                    break
-                print(DateUtils.is_date(user_input, "%m/%d/%y"))
+            game_data = instance.get_game(DateUtils.format_date(DateUtils.to_date("1/25/23")))
+            frame_scores = game_data[1][2:23]
+            print(frame_scores)
+            print(GameUtils.calc_frame_scores(frame_scores))
 
         else:
             print(f"Invalid Input: '{user_input}'")
