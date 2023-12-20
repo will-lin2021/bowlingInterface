@@ -1,0 +1,8 @@
+# Removes private info; such as API Keys and other ENV things
+.secrets/*
+
+# Remove pycharm's config files
+.idea/*
+
+# Removes python cache files
+__pycache__/*

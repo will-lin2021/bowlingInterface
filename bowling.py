@@ -32,7 +32,7 @@ class Interface:
 
         if not self.interface.valid:
             self.valid = False
-            self.err += self.interface.err
+            self.err.append(self.interface.err)
         # if not self.backup.valid:
         #     self.valid = False
         #     self.err += self.interface.err

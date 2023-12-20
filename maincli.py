@@ -8,9 +8,9 @@ Command Line Interface (CLI) for Bowling Score Tracker
 
 """
 
-from BowlingTools import Interface
-from BowlingTools import GameUtils
-from BowlingTools import DateUtils
+from bowling import Interface
+from bowling import GameUtils
+from bowling import DateUtils
 
 from dotenv import load_dotenv
 from os import getenv
